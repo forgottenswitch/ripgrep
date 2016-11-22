@@ -10,9 +10,10 @@ use atty;
 use pathutil::strip_prefix;
 use ignore::types::FileTypeDef;
 
+/// Enum of special values for tty_width
 const NOT_A_TTY: usize = 0;
-const EMPTY_TTY_WIDTH: usize = 1;
-const MIN_TTY_WIDTH: usize = EMPTY_TTY_WIDTH + 1;
+const NOT_YET_KNOWN: usize = 1;
+const MIN_TTY_WIDTH: usize = NOT_YET_KNOWN + 1;
 
 /// Printer encapsulates all output logic for searching.
 ///
@@ -24,7 +25,7 @@ pub struct Printer<W> {
     wtr: W,
     /// Terminal width.
     tty_width: usize,
-    /// How many bytes were output on this line
+    /// How many bytes are printed on this output line
     /// Should actually be characters, but this would require converting
     /// to output terminal encoding ... Keep it simple and assume ascii.
     written_width: usize,
@@ -62,7 +63,7 @@ impl<W: WriteColor> Printer<W> {
     pub fn new(wtr: W) -> Printer<W> {
         Printer {
             wtr: wtr,
-            tty_width: EMPTY_TTY_WIDTH,
+            tty_width: NOT_YET_KNOWN,
             written_width: 0,
             has_printed: false,
             column: false,
@@ -237,6 +238,7 @@ impl<W: WriteColor> Printer<W> {
         }
     }
 
+    /// Writes an input line, possibly as multiple output lines
     fn write_match<P: AsRef<Path>>(
         &mut self,
         re: &Regex,
@@ -247,14 +249,16 @@ impl<W: WriteColor> Printer<W> {
         line_number: Option<u64>,
         column: Option<u64>,
     ) {
-        if self.tty_width == EMPTY_TTY_WIDTH {
+        // Determine the terminal width if running for first time
+        if self.tty_width == NOT_YET_KNOWN {
             if atty::on_stdout() {
                 match atty::width() {
                     Some(x) => {
-                        if x >= MIN_TTY_WIDTH {
-                            self.tty_width = x;
-                        } else {
+                        let conflicts_with_special_values = x < MIN_TTY_WIDTH;
+                        if conflicts_with_special_values {
                             self.tty_width = NOT_A_TTY;
+                        } else {
+                            self.tty_width = x;
                         }
                     },
                     None => {
@@ -265,19 +269,20 @@ impl<W: WriteColor> Printer<W> {
         }
 
         let line;
-        let mut line_slice = &buf[start..end];
+        let mut text_to_print = &buf[start..end];
 
+        // Do the --replace if specified
         if self.replace.is_some() {
             line = re.replace_all(
                 &buf[start..end], &**self.replace.as_ref().unwrap());
-            line_slice = line.as_slice();
+            text_to_print = line.as_slice();
         }
 
-        // Each iteration prints a line
+        // Each iteration prints a line, updating the text_to_print
         loop {
             self.written_width = 0;
 
-            // Heading
+            // Filename
             if self.heading && self.with_filename && !self.has_printed {
                 self.write_file_sep();
                 self.write_heading(path.as_ref());
@@ -297,67 +302,94 @@ impl<W: WriteColor> Printer<W> {
             }
 
             // Write matches that fit on an output line
-            let line_slice1 = self.write_matched_line(re, line_slice);
+            let text_to_print1 = self.write_matched_line(re, text_to_print);
 
             // Ensure newline
-            if line_slice.last() != Some(&self.eol) {
+            if text_to_print.last() != Some(&self.eol) {
                 self.write_eol();
             }
 
             // Break if no more matches on this input line
-            match line_slice1 {
+            match text_to_print1 {
                 None => break,
-                Some(s) => line_slice = s,
+                Some(s) => text_to_print = s,
             }
         }
     }
 
+    /// Writes a single output line, at least one match.
+    /// Takes an input slice to output, and returns either what didn't fit, or None.
+    ///
+    /// If running not at tty, print the entire line.
+    /// Otherwise, try to limit line length to terminal width.
+    /// If all text from current position up to end of match fits, output it, and repeat.
+    ///
+    /// If not, make sure at least one match is output, maybe truncated at end.
+    /// If this is the beginning of output line and some of preceding text also fits, output it.
+    /// If there is not enough space until start of the next match (or end of input line),
+    /// output as much of beginning text as fits.
+    ///
     fn write_matched_line<'b>(&mut self, re: &Regex, buf: &'b [u8]) -> Option<&'b [u8]> {
         let max_width = self.tty_width - self.written_width;
+        let is_a_tty = self.tty_width >= MIN_TTY_WIDTH;
+        let width_is_limited = is_a_tty;
         let mut last_written = 0;
         let mut matches_written = 0;
 
+        // For each match on this input line
         for (s, e) in re.find_iter(buf) {
-            if self.tty_width >= MIN_TTY_WIDTH && e > max_width {
+            // Does not fit onto ouput line up to end?
+            if width_is_limited && e > max_width {
+                // Text up to end
                 if matches_written > 0 {
-                    // next match does not fit on a line
+                    // Next match does not fit on a line
                     self.write(&buf[last_written..max_width]);
-                    return Some(&buf[max_width..]);
+                    // Pretend we wrote all the match (to avoid any re-matches)
+                    return Some(&buf[e..]);
                 } else {
-                    // for this output line, first match does not fit
+                    // For this output line, first match does not fit
                     // Should almost never happen, yet is the largest case :)
                     let remaining_width = self.tty_width - self.written_width;
                     let l = e - s;
                     let mut e1 = e;
                     let mut b = last_written;
                     if l > remaining_width {
+                        // Match itself doesn't fit; drop its end and all of preceding text
                         b = s;
                         e1 = s + remaining_width;
                     } else if l < remaining_width {
+                        // Match fits; drop beginning of preceding text
                         b = e - remaining_width;
                         if b < last_written {
                             b = last_written;
                         }
                     }
                     self.write_one_match(buf, b, s, e1);
+                    // Pretend we wrote all the match (to avoid any re-matches)
                     return Some(&buf[s+l..]);
                 }
             }
 
+            // This match and all of preceding text fits; output both
             self.write_one_match(buf, last_written, s, e);
             matches_written += 1;
             last_written = e;
         }
 
+        // The rest of line does not contain any matches; drop the end
         let mut e = buf.len();
-        if self.tty_width >= MIN_TTY_WIDTH && e > max_width {
+        if width_is_limited && e > max_width {
             e = max_width
         }
-
         self.write(&buf[last_written..e]);
+
         return None;
     }
 
+    /// Prints:
+    /// - text preceding a match (&buf[start..match_start])
+    /// - match in color (&buf[match_start..match_end])
+    /// Resets the color before returning.
     fn write_one_match(&mut self, buf: &[u8],
         start: usize,
         match_start: usize,
