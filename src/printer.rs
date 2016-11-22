@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 use regex::bytes::Regex;
 use termcolor::{Color, ColorSpec, ParseColorError, WriteColor};
+use atty;
 
 use pathutil::strip_prefix;
 use ignore::types::FileTypeDef;
@@ -17,6 +18,12 @@ use ignore::types::FileTypeDef;
 pub struct Printer<W> {
     /// The underlying writer.
     wtr: W,
+    ///
+    tty_width: usize,
+    /// How many bytes were output on this line
+    /// Should actually be characters, but this would require converting
+    /// to output terminal encoding ... Keep it simple and assume ascii.
+    written_width: usize,
     /// Whether anything has been printed to wtr yet.
     has_printed: bool,
     /// Whether to show column numbers for the first match or not.
@@ -51,6 +58,8 @@ impl<W: WriteColor> Printer<W> {
     pub fn new(wtr: W) -> Printer<W> {
         Printer {
             wtr: wtr,
+            tty_width: 0,
+            written_width: 0,
             has_printed: false,
             column: false,
             context_separator: "--".to_string().into_bytes(),
@@ -234,45 +243,118 @@ impl<W: WriteColor> Printer<W> {
         line_number: Option<u64>,
         column: Option<u64>,
     ) {
-        if self.heading && self.with_filename && !self.has_printed {
-            self.write_file_sep();
-            self.write_heading(path.as_ref());
-        } else if !self.heading && self.with_filename {
-            self.write_non_heading_path(path.as_ref());
+        if self.tty_width == 0 {
+            self.tty_width = atty::width();
         }
-        if let Some(line_number) = line_number {
-            self.line_number(line_number, b':');
-        }
-        if let Some(c) = column {
-            self.write((c + 1).to_string().as_bytes());
-            self.write(b":");
-        }
+
+        let line;
+        let mut line_slice = &buf[start..end];
+
         if self.replace.is_some() {
-            let line = re.replace_all(
+            line = re.replace_all(
                 &buf[start..end], &**self.replace.as_ref().unwrap());
-            self.write(&line);
-        } else {
-            self.write_matched_line(re, &buf[start..end]);
+            line_slice = line.as_slice();
         }
-        if buf[start..end].last() != Some(&self.eol) {
-            self.write_eol();
+
+        // Each iteration prints a line
+        loop {
+            self.written_width = 0;
+
+            // Heading
+            if self.heading && self.with_filename && !self.has_printed {
+                self.write_file_sep();
+                self.write_heading(path.as_ref());
+            } else if !self.heading && self.with_filename {
+                self.write_non_heading_path(path.as_ref());
+            }
+
+            // Line number
+            if let Some(line_number) = line_number {
+                self.line_number(line_number, b':');
+            }
+
+            // Column
+            if let Some(c) = column {
+                self.write((c + 1).to_string().as_bytes());
+                self.write(b":");
+            }
+
+            // Write matches that fit on an output line
+            let line_slice1 = self.write_matched_line(re, line_slice);
+
+            // Ensure newline
+            if line_slice.last() != Some(&self.eol) {
+                self.write_eol();
+            }
+
+            // Break if no more matches on this input line
+            match line_slice1 {
+                None => break,
+                Some(s) => line_slice = s,
+            }
         }
     }
 
-    fn write_matched_line(&mut self, re: &Regex, buf: &[u8]) {
-        if !self.wtr.supports_color() {
-            self.write(buf);
-            return;
-        }
+    fn write_matched_line<'b>(&mut self, re: &Regex, buf: &'b [u8]) -> Option<&'b [u8]> {
+        let max_width = self.tty_width - self.written_width;
         let mut last_written = 0;
+        let mut matches_written = 0;
+
         for (s, e) in re.find_iter(buf) {
-            self.write(&buf[last_written..s]);
-            let _ = self.wtr.set_color(self.colors.matched());
-            self.write(&buf[s..e]);
-            let _ = self.wtr.reset();
+            if e > max_width {
+                if matches_written > 0 {
+                    // next match does not fit on a line
+                    self.write(&buf[last_written..max_width]);
+                    return Some(&buf[max_width..]);
+                } else {
+                    // for this output line, first match does not fit
+                    // Should almost never happen, yet is the largest case :)
+                    let remaining_width = self.tty_width - self.written_width;
+                    let l = e - s;
+                    let mut e1 = e;
+                    let mut b = last_written;
+                    if l > remaining_width {
+                        b = s;
+                        e1 = s + remaining_width;
+                    } else if l < remaining_width {
+                        b = e - remaining_width;
+                        if b < last_written {
+                            b = last_written;
+                        }
+                    }
+                    self.write_one_match(buf, b, s, e1);
+                    return Some(&buf[s+l..]);
+                }
+            }
+
+            self.write_one_match(buf, last_written, s, e);
+            matches_written += 1;
             last_written = e;
         }
-        self.write(&buf[last_written..]);
+
+        let mut e = buf.len();
+        if e > max_width {
+            e = max_width
+        }
+
+        self.write(&buf[last_written..e]);
+        return None;
+    }
+
+    fn write_one_match(&mut self, buf: &[u8],
+        start: usize,
+        match_start: usize,
+        match_end: usize
+    ) {
+        let color = self.wtr.supports_color();
+        self.write(&buf[start..match_start]);
+        if color {
+            let _ = self.wtr.set_color(self.colors.matched());
+        }
+        self.write(&buf[match_start..match_end]);
+        if color {
+            let _ = self.wtr.reset();
+        }
     }
 
     pub fn context<P: AsRef<Path>>(
@@ -347,6 +429,7 @@ impl<W: WriteColor> Printer<W> {
 
     fn write(&mut self, buf: &[u8]) {
         self.has_printed = true;
+        self.written_width += buf.len();
         let _ = self.wtr.write_all(buf);
     }
 
