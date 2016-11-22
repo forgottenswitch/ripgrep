@@ -48,18 +48,24 @@ pub fn on_stdout() -> bool {
 
 /// Returns tty width
 #[cfg(unix)]
-pub fn width() -> usize {
+pub fn width() -> Option<usize> {
     use libc;
 
     let wsz = libc::winsize {
         ws_row: 0, ws_col: 0,
         ws_xpixel: 0, ws_ypixel: 0,
     };
-    let w: u16;
+    let rc: usize;
 
-    unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &wsz); }
-    w = wsz.ws_col;
-    return w as usize;
+    unsafe {
+        rc = libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &wsz) as usize;
+    }
+    if rc == 0 {
+        let w = wsz.ws_col;
+        return Some(w as usize);
+    } else {
+        return None;
+    }
 }
 
 /// Returns true if there is a tty on stdin.

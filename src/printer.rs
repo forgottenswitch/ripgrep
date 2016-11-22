@@ -10,6 +10,10 @@ use atty;
 use pathutil::strip_prefix;
 use ignore::types::FileTypeDef;
 
+const NOT_A_TTY: usize = 0;
+const EMPTY_TTY_WIDTH: usize = 1;
+const MIN_TTY_WIDTH: usize = EMPTY_TTY_WIDTH + 1;
+
 /// Printer encapsulates all output logic for searching.
 ///
 /// Note that we currently ignore all write errors. It's probably worthwhile
@@ -18,8 +22,8 @@ use ignore::types::FileTypeDef;
 pub struct Printer<W> {
     /// The underlying writer.
     wtr: W,
-    /// Terminal width if stdout is a tty.
-    tty_width: Option<usize>,
+    /// Terminal width.
+    tty_width: usize,
     /// How many bytes were output on this line
     /// Should actually be characters, but this would require converting
     /// to output terminal encoding ... Keep it simple and assume ascii.
@@ -58,7 +62,7 @@ impl<W: WriteColor> Printer<W> {
     pub fn new(wtr: W) -> Printer<W> {
         Printer {
             wtr: wtr,
-            tty_width: None,
+            tty_width: EMPTY_TTY_WIDTH,
             written_width: 0,
             has_printed: false,
             column: false,
@@ -243,9 +247,20 @@ impl<W: WriteColor> Printer<W> {
         line_number: Option<u64>,
         column: Option<u64>,
     ) {
-        if self.tty_width.is_none()  {
+        if self.tty_width == EMPTY_TTY_WIDTH {
             if atty::on_stdout() {
-                self.tty_width = Some(atty::width());
+                match atty::width() {
+                    Some(x) => {
+                        if x >= MIN_TTY_WIDTH {
+                            self.tty_width = x;
+                        } else {
+                            self.tty_width = NOT_A_TTY;
+                        }
+                    },
+                    None => {
+                        self.tty_width = NOT_A_TTY
+                    },
+                }
             }
         }
 
@@ -298,13 +313,12 @@ impl<W: WriteColor> Printer<W> {
     }
 
     fn write_matched_line<'b>(&mut self, re: &Regex, buf: &'b [u8]) -> Option<&'b [u8]> {
-        let tty_width = self.tty_width.unwrap_or(0);
-        let max_width = tty_width - self.written_width;
+        let max_width = self.tty_width - self.written_width;
         let mut last_written = 0;
         let mut matches_written = 0;
 
         for (s, e) in re.find_iter(buf) {
-            if self.tty_width.is_some() && e > max_width {
+            if self.tty_width >= MIN_TTY_WIDTH && e > max_width {
                 if matches_written > 0 {
                     // next match does not fit on a line
                     self.write(&buf[last_written..max_width]);
@@ -312,7 +326,7 @@ impl<W: WriteColor> Printer<W> {
                 } else {
                     // for this output line, first match does not fit
                     // Should almost never happen, yet is the largest case :)
-                    let remaining_width = tty_width - self.written_width;
+                    let remaining_width = self.tty_width - self.written_width;
                     let l = e - s;
                     let mut e1 = e;
                     let mut b = last_written;
@@ -336,7 +350,7 @@ impl<W: WriteColor> Printer<W> {
         }
 
         let mut e = buf.len();
-        if self.tty_width.is_some() && e > max_width {
+        if self.tty_width >= MIN_TTY_WIDTH && e > max_width {
             e = max_width
         }
 
