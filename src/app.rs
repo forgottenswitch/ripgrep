@@ -171,6 +171,9 @@ fn app<F>(next_line_help: bool, doc: F) -> App<'static, 'static>
         .arg(flag("type-clear")
              .value_name("TYPE").takes_value(true)
              .multiple(true).number_of_values(1))
+        .arg(flag("horiz-context")
+            .value_name("NUM").takes_value(true)
+            .validator(validate_number))
 }
 
 struct Usage {
@@ -483,6 +486,10 @@ lazy_static! {
               only clears the default type definitions that are found inside \
               of ripgrep.\n\nNote that this MUST be passed to every \
               invocation of ripgrep. Type settings are NOT persisted.");
+        doc!(h, "horiz-context",
+             "How many columns to guarantee around a match. 0 means unlimited \
+              (the default)",
+             "");
 
         h
     };
