@@ -708,6 +708,8 @@ impl<'a> ArgMatches<'a> {
             "line:fg:green".parse().unwrap(),
             "match:fg:red".parse().unwrap(),
             "match:style:bold".parse().unwrap(),
+            "ellipsis:fg:green".parse().unwrap(),
+            "ellipsis:style:bold".parse().unwrap(),
         ];
         for spec_str in self.values_of_lossy_vec("colors") {
             specs.push(try!(spec_str.parse()));

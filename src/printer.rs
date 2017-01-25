@@ -466,6 +466,7 @@ pub struct ColorSpecs {
     path: ColorSpec,
     line: ColorSpec,
     matched: ColorSpec,
+    ellipsis: ColorSpec,
 }
 
 /// A single color specification provided by the user.
@@ -534,6 +535,7 @@ enum OutType {
     Path,
     Line,
     Match,
+    Ellipsis,
 }
 
 /// The specification type.
@@ -564,6 +566,7 @@ impl ColorSpecs {
                 OutType::Path => user_spec.merge_into(&mut specs.path),
                 OutType::Line => user_spec.merge_into(&mut specs.line),
                 OutType::Match => user_spec.merge_into(&mut specs.matched),
+                OutType::Ellipsis => user_spec.merge_into(&mut specs.ellipsis),
             }
         }
         specs
@@ -582,6 +585,11 @@ impl ColorSpecs {
     /// Return the color specification for coloring matched text.
     fn matched(&self) -> &ColorSpec {
         &self.matched
+    }
+
+    /// Return the color specification for coloring an ellipsis.
+    fn ellipsis(&self) -> &ColorSpec {
+        &self.ellipsis
     }
 }
 
@@ -655,6 +663,7 @@ impl FromStr for OutType {
             "path" => Ok(OutType::Path),
             "line" => Ok(OutType::Line),
             "match" => Ok(OutType::Match),
+            "ellipsis" => Ok(OutType::Ellipsis),
             _ => Err(Error::UnrecognizedOutType(s.to_string())),
         }
     }
@@ -706,6 +715,7 @@ mod tests {
             path: ColorSpec::default(),
             line: ColorSpec::default(),
             matched: expect_matched,
+            ellipsis: ColorSpec::default(),
         });
     }
 
