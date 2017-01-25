@@ -9,6 +9,8 @@ use termcolor::{Color, ColorSpec, ParseColorError, WriteColor};
 use pathutil::strip_prefix;
 use ignore::types::FileTypeDef;
 
+const ELLIPSIS : &'static str = "[..]";
+
 /// Printer encapsulates all output logic for searching.
 ///
 /// Note that we currently ignore all write errors. It's probably worthwhile
@@ -46,6 +48,8 @@ pub struct Printer<W> {
     colors: ColorSpecs,
     /// The separator to use for file paths. If empty, this is ignored.
     path_separator: Option<u8>,
+    /// How many columns around a match to print. 0 means unlimited.
+    horiz_context: usize,
 }
 
 impl<W: WriteColor> Printer<W> {
@@ -65,6 +69,7 @@ impl<W: WriteColor> Printer<W> {
             with_filename: false,
             colors: ColorSpecs::default(),
             path_separator: None,
+            horiz_context: 0,
         }
     }
 
@@ -141,6 +146,11 @@ impl<W: WriteColor> Printer<W> {
     /// When set, each match is prefixed with the file name that it came from.
     pub fn with_filename(mut self, yes: bool) -> Printer<W> {
         self.with_filename = yes;
+        self
+    }
+
+    pub fn horiz_context(mut self, n: usize) -> Printer<W> {
+        self.horiz_context = n;
         self
     }
 
@@ -275,19 +285,15 @@ impl<W: WriteColor> Printer<W> {
     }
 
     fn write_matched_line(&mut self, re: &Regex, buf: &[u8]) {
-        if !self.wtr.supports_color() || self.colors.matched().is_none() {
-            self.write(buf);
-            return;
-        }
         let mut last_written = 0;
         for m in re.find_iter(buf) {
-            self.write(&buf[last_written..m.start()]);
+            self.write_horiz_context(&buf[last_written..m.start()]);
             let _ = self.wtr.set_color(self.colors.matched());
             self.write(&buf[m.start()..m.end()]);
             let _ = self.wtr.reset();
             last_written = m.end();
         }
-        self.write(&buf[last_written..]);
+        self.write_horiz_context(&buf[last_written..]);
     }
 
     pub fn context<P: AsRef<Path>>(
@@ -316,6 +322,21 @@ impl<W: WriteColor> Printer<W> {
         if buf[start..end].last() != Some(&self.eol) {
             self.write_eol();
         }
+    }
+
+    fn write_horiz_context(&mut self, buf: &[u8]) {
+        let l = buf.len();
+        let no_ellipsis_width = self.horiz_context + ELLIPSIS.len() + self.horiz_context;
+        if self.horiz_context == 0 || l <= no_ellipsis_width {
+            self.write(buf);
+            return;
+        }
+        let hctx = self.horiz_context;
+        self.write(&buf[0..hctx]);
+        let _ = self.wtr.set_color(self.colors.ellipsis());
+        self.write(ELLIPSIS.as_bytes());
+        let _ = self.wtr.reset();
+        self.write(&buf[(l - hctx)..]);
     }
 
     fn write_heading<P: AsRef<Path>>(&mut self, path: P) {
