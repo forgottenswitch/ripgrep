@@ -491,12 +491,11 @@ lazy_static! {
               invocation of ripgrep. Type settings are NOT persisted.");
         doc!(h, "horiz-context",
              "How many columns to guarantee around a match. 0 means unlimited \
-              (the default)",
-             "");
+              (the default)");
         doc!(h, "horiz-matches",
-             "Maximum number of matches to print on a line. 0 means unlimited \
-              (the default)",
-             "");
+             "Maximum number of matches to print on a line. To avoid ambiguity, \
+              --horiz-context is ignored for final ellipsis. \
+              0 means unlimited (the default).");
 
         h
     };

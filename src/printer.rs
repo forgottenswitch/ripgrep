@@ -345,8 +345,8 @@ impl<W: WriteColor> Printer<W> {
                 if omitted_count <= 0 {
                     self.write_horiz_context(&buf[last_written..]);
                 } else {
-                    self.write_horiz_context_with_count(&buf[last_written..],
-                        omitted_count as usize);
+                    self.write_omitted_count(omitted_count as usize);
+                    self.write_eol();
                 }
             },
         };
@@ -405,13 +405,7 @@ impl<W: WriteColor> Printer<W> {
         }
     }
 
-    fn write_horiz_context_with_count(&mut self, buf: &[u8], count: usize) {
-        let hctx =
-            match self.horiz_context {
-                None => 0,
-                Some(n) => n,
-            };
-        let s = String::from_utf8_lossy(buf).into_owned();
+    fn write_omitted_count(&mut self, count: usize) {
         let m10 = count % 10;
         let m100 = count % 100;
         let matches_s =
@@ -421,13 +415,9 @@ impl<W: WriteColor> Printer<W> {
                 "matches"
             };
         let count_msg = format!("[..{} more {}..]", count, matches_s);
-        let s1 = begstr_by_width(&s, hctx);
-        let s2 = endstr_by_width(&s, hctx);
-        self.write(s1.as_bytes());
         let _ = self.wtr.set_color(self.colors.ellipsis());
         self.write(count_msg.as_bytes());
         let _ = self.wtr.reset();
-        self.write(s2.as_bytes());
     }
 
     fn write_heading<P: AsRef<Path>>(&mut self, path: P) {
