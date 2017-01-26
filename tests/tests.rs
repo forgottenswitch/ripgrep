@@ -438,6 +438,37 @@ sherlock!(horiz_context, "wisp", |wd: WorkDir, mut cmd: Command| {
     assert_eq!(lines, "can ex[..]rom a wisp of st[..]r ash;\n");
 });
 
+sherlock!(horiz_matches, "es", |wd: WorkDir, mut cmd: Command| {
+    cmd.arg("--horiz-matches").arg("2");
+    let lines: String = wd.stdout(&mut cmd);
+    let expected = "\
+Holmeses[..1 more match..]
+be, to a very large extent, the result of luck. Sherlock Holmes
+";
+    assert_eq!(lines, expected);
+});
+
+sherlock!(horiz_context0_and_matches, "es", |wd: WorkDir, mut cmd: Command| {
+    cmd.arg("--horiz-context").arg("0");
+    cmd.arg("--horiz-matches").arg("2");
+    let lines: String = wd.stdout(&mut cmd);
+    let expected = "\
+Holmeses[..1 more match..]
+[..]es[..]es
+";
+    assert_eq!(lines, expected);
+});
+
+sherlock!(horiz_context1_and_matches, "es", |wd: WorkDir, mut cmd: Command| {
+    cmd.arg("--horiz-context").arg("1");
+    cmd.arg("--horiz-matches").arg("2");
+    let lines: String = wd.stdout(&mut cmd);
+    let expected = "\
+Holmeses[..1 more match..]
+b[..]resu[..]mes
+";
+    assert_eq!(lines, expected);
+});
 
 sherlock!(ignore_hidden, "Sherlock", ".", |wd: WorkDir, mut cmd: Command| {
     wd.remove("sherlock");
