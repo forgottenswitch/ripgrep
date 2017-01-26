@@ -81,15 +81,29 @@ fn begstr_by_width<'a>(s: &'a String, w: usize) -> &'a str {
 
 /// Returns a str from the end of s that has width of w characters.
 fn endstr_by_width<'a>(s: &'a String, w: usize) -> &'a str {
-    let mut si;
-    let mut ci = s.as_str().chars();
-    loop {
-        si = ci.as_str();
-        let wi = UnicodeWidthStr::width(si);
-        if wi <= w { break; }
-        let _ = ci.next();
+    let sb0 = s.as_str().as_ptr();
+    let sl0 = s.as_str().len();
+    let ci = s.as_str().char_indices().rev();
+    let mut i_prev = sl0;
+    for (i, _) in ci {
+        let l = sl0 - i;
+        // Skip the last w bytes, as a char wider than 1 column is >=2 bytes,
+        // and there are no >2 columns chars.
+        if l < w { continue; }
+        unsafe {
+            let sb = ::std::slice::from_raw_parts(sb0.offset(i as isize), l);
+            let si = ::std::str::from_utf8_unchecked(sb);
+            let wi = UnicodeWidthStr::width(si);
+            if wi > w {
+                let l_prev = sl0 - i_prev;
+                let sb_prev = ::std::slice::from_raw_parts(sb0.offset(i_prev as isize), l_prev);
+                let si_prev = ::std::str::from_utf8_unchecked(sb_prev);
+                return si_prev;
+            }
+        }
+        i_prev = i;
     }
-    return si;
+    return s.as_str();
 }
 
 impl<W: WriteColor> Printer<W> {
