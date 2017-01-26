@@ -57,15 +57,26 @@ pub struct Printer<W> {
 
 /// Returns a str from the beginning of s that has width of w characters.
 fn begstr_by_width<'a>(s: &'a String, w: usize) -> &'a str {
-    let mut si;
-    let mut ci = s.as_str().chars();
-    loop {
-        si = ci.as_str();
-        let wi = UnicodeWidthStr::width(si);
-        if wi <= w { break; }
-        let _ = ci.next_back();
+    let sb0 = s.as_str().as_ptr();
+    let ci = s.as_str().char_indices();
+    let mut i_prev = 0;
+    for (i, _) in ci {
+        // Skip the first w bytes, as a char wider than 1 column is >=2 bytes,
+        // and there are no >2 columns chars.
+        if i < w { continue; }
+        unsafe {
+            let sb = ::std::slice::from_raw_parts(sb0, i);
+            let si = ::std::str::from_utf8_unchecked(sb);
+            let wi = UnicodeWidthStr::width(si);
+            if wi > w {
+                let sb_prev = ::std::slice::from_raw_parts(sb0, i_prev);
+                let si_prev = ::std::str::from_utf8_unchecked(sb_prev);
+                return si_prev;
+            }
+        }
+        i_prev = i;
     }
-    return si;
+    return s.as_str();
 }
 
 /// Returns a str from the end of s that has width of w characters.
