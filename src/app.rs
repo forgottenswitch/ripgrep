@@ -492,9 +492,11 @@ lazy_static! {
         doc!(h, "horiz-context",
              "Number of columns to show around a match.");
         doc!(h, "horiz-matches",
-             "Maximum number of matches to print on a line. To avoid ambiguity, \
-              --horiz-context is ignored for final ellipsis. \
-              0 means unlimited (the default).");
+             "Number of matches to show on a line.",
+             "Maximum number of matches to show on a single line. \
+              Show ellipsis with count of omitted matches upon exceeding. \
+              To avoid ambiguity when matches get into horiz-context, \
+              temprorarily set it to 0.");
 
         h
     };
