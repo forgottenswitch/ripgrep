@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 use regex::bytes::Regex;
 use termcolor::{Color, ColorSpec, ParseColorError, WriteColor};
+use unicode_width::UnicodeWidthStr;
 
 use pathutil::strip_prefix;
 use ignore::types::FileTypeDef;
@@ -50,6 +51,32 @@ pub struct Printer<W> {
     path_separator: Option<u8>,
     /// How many columns around a match to print. 0 means unlimited.
     horiz_context: usize,
+}
+
+/// Returns a str from the beginning of s that has width of w characters.
+fn begstr_by_width<'a>(s: &'a String, w: usize) -> &'a str {
+    let mut si;
+    let mut ci = s.as_str().chars();
+    loop {
+        si = ci.as_str();
+        let wi = UnicodeWidthStr::width(si);
+        if wi <= w { break; }
+        let _ = ci.next_back();
+    }
+    return si;
+}
+
+/// Returns a str from the end of s that has width of w characters.
+fn endstr_by_width<'a>(s: &'a String, w: usize) -> &'a str {
+    let mut si;
+    let mut ci = s.as_str().chars();
+    loop {
+        si = ci.as_str();
+        let wi = UnicodeWidthStr::width(si);
+        if wi <= w { break; }
+        let _ = ci.next();
+    }
+    return si;
 }
 
 impl<W: WriteColor> Printer<W> {
@@ -325,18 +352,21 @@ impl<W: WriteColor> Printer<W> {
     }
 
     fn write_horiz_context(&mut self, buf: &[u8]) {
-        let l = buf.len();
+        let s = String::from_utf8_lossy(buf).into_owned();
+        let w = UnicodeWidthStr::width(s.as_str());
         let no_ellipsis_width = self.horiz_context + ELLIPSIS.len() + self.horiz_context;
-        if self.horiz_context == 0 || l <= no_ellipsis_width {
-            self.write(buf);
+        if self.horiz_context == 0 || w <= no_ellipsis_width {
+            self.write(s.as_bytes());
             return;
         }
         let hctx = self.horiz_context;
-        self.write(&buf[0..hctx]);
+        let s1 = begstr_by_width(&s, hctx);
+        let s2 = endstr_by_width(&s, hctx);
+        self.write(s1.as_bytes());
         let _ = self.wtr.set_color(self.colors.ellipsis());
         self.write(ELLIPSIS.as_bytes());
         let _ = self.wtr.reset();
-        self.write(&buf[(l - hctx)..]);
+        self.write(s2.as_bytes());
     }
 
     fn write_heading<P: AsRef<Path>>(&mut self, path: P) {

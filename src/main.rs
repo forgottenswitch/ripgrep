@@ -18,6 +18,7 @@ extern crate num_cpus;
 extern crate regex;
 extern crate same_file;
 extern crate termcolor;
+extern crate unicode_width;
 #[cfg(windows)]
 extern crate winapi;
 

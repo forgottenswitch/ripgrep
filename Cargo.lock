@@ -18,6 +18,7 @@ dependencies = [
  "regex 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "same-file 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "termcolor 0.2.0",
+ "unicode-width 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

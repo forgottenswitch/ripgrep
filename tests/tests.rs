@@ -435,7 +435,7 @@ sherlock!(context_line_numbers, "world|attached",
 sherlock!(horiz_context, "wisp", |wd: WorkDir, mut cmd: Command| {
     cmd.arg("--horiz-context").arg("6");
     let lines: String = wd.stdout(&mut cmd);
-    assert_eq!(lines, "can ex[..]rom a wisp of st[..] ash;\n");
+    assert_eq!(lines, "can ex[..]rom a wisp of st[..]r ash;\n");
 });
 
 
