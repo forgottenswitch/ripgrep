@@ -321,14 +321,24 @@ impl<W: WriteColor> Printer<W> {
 
     fn write_matched_line(&mut self, re: &Regex, buf: &[u8]) {
         let mut last_written = 0;
+        let mut matches_count = 0;
         for m in re.find_iter(buf) {
+            matches_count += 1;
+            if self.horiz_matches > 0 && matches_count > self.horiz_matches {
+                continue;
+            }
             self.write_horiz_context(&buf[last_written..m.start()]);
             let _ = self.wtr.set_color(self.colors.matched());
             self.write(&buf[m.start()..m.end()]);
             let _ = self.wtr.reset();
             last_written = m.end();
         }
-        self.write_horiz_context(&buf[last_written..]);
+        let omitted_count = matches_count as isize - self.horiz_matches as isize;
+        if self.horiz_matches == 0 || omitted_count <= 0 {
+            self.write_horiz_context(&buf[last_written..]);
+        } else {
+            self.write_horiz_context_with_count(&buf[last_written..], omitted_count as usize);
+        }
     }
 
     pub fn context<P: AsRef<Path>>(
@@ -373,6 +383,27 @@ impl<W: WriteColor> Printer<W> {
         self.write(s1.as_bytes());
         let _ = self.wtr.set_color(self.colors.ellipsis());
         self.write(ELLIPSIS.as_bytes());
+        let _ = self.wtr.reset();
+        self.write(s2.as_bytes());
+    }
+
+    fn write_horiz_context_with_count(&mut self, buf: &[u8], count: usize) {
+        let s = String::from_utf8_lossy(buf).into_owned();
+        let m10 = count % 10;
+        let m100 = count % 100;
+        let matches_s =
+            if m10 == 1 && m100 != 11 {
+                "match"
+            } else {
+                "matches"
+            };
+        let count_msg = format!("[..{} more {}..]", count, matches_s);
+        let hctx = self.horiz_context;
+        let s1 = begstr_by_width(&s, hctx);
+        let s2 = endstr_by_width(&s, hctx);
+        self.write(s1.as_bytes());
+        let _ = self.wtr.set_color(self.colors.ellipsis());
+        self.write(count_msg.as_bytes());
         let _ = self.wtr.reset();
         self.write(s2.as_bytes());
     }
