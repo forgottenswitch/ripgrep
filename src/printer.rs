@@ -51,6 +51,8 @@ pub struct Printer<W> {
     path_separator: Option<u8>,
     /// How many columns around a match to print. 0 means unlimited.
     horiz_context: usize,
+    /// How many matches to print on a line. 0 means unlimited.
+    horiz_matches: usize,
 }
 
 /// Returns a str from the beginning of s that has width of w characters.
@@ -97,6 +99,7 @@ impl<W: WriteColor> Printer<W> {
             colors: ColorSpecs::default(),
             path_separator: None,
             horiz_context: 0,
+            horiz_matches: 0,
         }
     }
 
@@ -178,6 +181,11 @@ impl<W: WriteColor> Printer<W> {
 
     pub fn horiz_context(mut self, n: usize) -> Printer<W> {
         self.horiz_context = n;
+        self
+    }
+
+    pub fn horiz_matches(mut self, n: usize) -> Printer<W> {
+        self.horiz_matches = n;
         self
     }
 

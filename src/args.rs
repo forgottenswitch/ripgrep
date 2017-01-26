@@ -74,6 +74,7 @@ pub struct Args {
     types: Types,
     with_filename: bool,
     horiz_context: usize,
+    horiz_matches: usize,
 }
 
 impl Args {
@@ -149,6 +150,7 @@ impl Args {
             .colors(self.colors.clone())
             .column(self.column)
             .horiz_context(self.horiz_context)
+            .horiz_matches(self.horiz_matches)
             .context_separator(self.context_separator.clone())
             .eol(self.eol)
             .heading(self.heading)
@@ -363,6 +365,7 @@ impl<'a> ArgMatches<'a> {
             types: try!(self.types()),
             with_filename: with_filename,
             horiz_context: try!(self.usize_of("horiz-context")).unwrap_or(0),
+            horiz_matches: try!(self.usize_of("horiz-matches")).unwrap_or(0),
         };
         if args.mmap {
             debug!("will try to use memory maps");
