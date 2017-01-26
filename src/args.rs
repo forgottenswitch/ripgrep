@@ -73,8 +73,8 @@ pub struct Args {
     type_list: bool,
     types: Types,
     with_filename: bool,
-    horiz_context: usize,
-    horiz_matches: usize,
+    horiz_context: Option<usize>,
+    horiz_matches: Option<usize>,
 }
 
 impl Args {
@@ -364,8 +364,8 @@ impl<'a> ArgMatches<'a> {
             type_list: self.is_present("type-list"),
             types: try!(self.types()),
             with_filename: with_filename,
-            horiz_context: try!(self.usize_of("horiz-context")).unwrap_or(0),
-            horiz_matches: try!(self.usize_of("horiz-matches")).unwrap_or(0),
+            horiz_context: try!(self.usize_of("horiz-context")),
+            horiz_matches: try!(self.usize_of("horiz-matches")),
         };
         if args.mmap {
             debug!("will try to use memory maps");

@@ -49,10 +49,10 @@ pub struct Printer<W> {
     colors: ColorSpecs,
     /// The separator to use for file paths. If empty, this is ignored.
     path_separator: Option<u8>,
-    /// How many columns around a match to print. 0 means unlimited.
-    horiz_context: usize,
-    /// How many matches to print on a line. 0 means unlimited.
-    horiz_matches: usize,
+    /// How many columns around a match to print, or unlimited.
+    horiz_context: Option<usize>,
+    /// How many matches to print on a line, or unlimited.
+    horiz_matches: Option<usize>,
 }
 
 /// Returns a str from the beginning of s that has width of w characters.
@@ -98,8 +98,8 @@ impl<W: WriteColor> Printer<W> {
             with_filename: false,
             colors: ColorSpecs::default(),
             path_separator: None,
-            horiz_context: 0,
-            horiz_matches: 0,
+            horiz_context: None,
+            horiz_matches: None,
         }
     }
 
@@ -179,12 +179,12 @@ impl<W: WriteColor> Printer<W> {
         self
     }
 
-    pub fn horiz_context(mut self, n: usize) -> Printer<W> {
+    pub fn horiz_context(mut self, n: Option<usize>) -> Printer<W> {
         self.horiz_context = n;
         self
     }
 
-    pub fn horiz_matches(mut self, n: usize) -> Printer<W> {
+    pub fn horiz_matches(mut self, n: Option<usize>) -> Printer<W> {
         self.horiz_matches = n;
         self
     }
@@ -324,21 +324,32 @@ impl<W: WriteColor> Printer<W> {
         let mut matches_count = 0;
         for m in re.find_iter(buf) {
             matches_count += 1;
-            if self.horiz_matches > 0 && matches_count > self.horiz_matches {
-                continue;
-            }
+            match self.horiz_matches {
+                None => (),
+                Some(max_matches) => {
+                    if matches_count > max_matches {
+                        continue;
+                    }
+                },
+            };
             self.write_horiz_context(&buf[last_written..m.start()]);
             let _ = self.wtr.set_color(self.colors.matched());
             self.write(&buf[m.start()..m.end()]);
             let _ = self.wtr.reset();
             last_written = m.end();
         }
-        let omitted_count = matches_count as isize - self.horiz_matches as isize;
-        if self.horiz_matches == 0 || omitted_count <= 0 {
-            self.write_horiz_context(&buf[last_written..]);
-        } else {
-            self.write_horiz_context_with_count(&buf[last_written..], omitted_count as usize);
-        }
+        match self.horiz_matches {
+            None => self.write_horiz_context(&buf[last_written..]),
+            Some(max_matches) => {
+                let omitted_count = matches_count as isize - max_matches as isize;
+                if omitted_count <= 0 {
+                    self.write_horiz_context(&buf[last_written..]);
+                } else {
+                    self.write_horiz_context_with_count(&buf[last_written..],
+                        omitted_count as usize);
+                }
+            },
+        };
     }
 
     pub fn context<P: AsRef<Path>>(
@@ -371,23 +382,35 @@ impl<W: WriteColor> Printer<W> {
 
     fn write_horiz_context(&mut self, buf: &[u8]) {
         let s = String::from_utf8_lossy(buf).into_owned();
-        let w = UnicodeWidthStr::width(s.as_str());
-        let no_ellipsis_width = self.horiz_context + ELLIPSIS.len() + self.horiz_context;
-        if self.horiz_context == 0 || w <= no_ellipsis_width {
-            self.write(s.as_bytes());
-            return;
+        match self.horiz_context {
+            None => {
+                self.write(s.as_bytes());
+                return;
+            }
+            Some(hctx) => {
+                let w = UnicodeWidthStr::width(s.as_str());
+                let no_ellipsis_width = hctx + ELLIPSIS.len() + hctx;
+                if w <= no_ellipsis_width {
+                    self.write(s.as_bytes());
+                    return;
+                }
+                let s1 = begstr_by_width(&s, hctx);
+                let s2 = endstr_by_width(&s, hctx);
+                self.write(s1.as_bytes());
+                let _ = self.wtr.set_color(self.colors.ellipsis());
+                self.write(ELLIPSIS.as_bytes());
+                let _ = self.wtr.reset();
+                self.write(s2.as_bytes());
+            }
         }
-        let hctx = self.horiz_context;
-        let s1 = begstr_by_width(&s, hctx);
-        let s2 = endstr_by_width(&s, hctx);
-        self.write(s1.as_bytes());
-        let _ = self.wtr.set_color(self.colors.ellipsis());
-        self.write(ELLIPSIS.as_bytes());
-        let _ = self.wtr.reset();
-        self.write(s2.as_bytes());
     }
 
     fn write_horiz_context_with_count(&mut self, buf: &[u8], count: usize) {
+        let hctx =
+            match self.horiz_context {
+                None => 0,
+                Some(n) => n,
+            };
         let s = String::from_utf8_lossy(buf).into_owned();
         let m10 = count % 10;
         let m100 = count % 100;
@@ -398,7 +421,6 @@ impl<W: WriteColor> Printer<W> {
                 "matches"
             };
         let count_msg = format!("[..{} more {}..]", count, matches_s);
-        let hctx = self.horiz_context;
         let s1 = begstr_by_width(&s, hctx);
         let s2 = endstr_by_width(&s, hctx);
         self.write(s1.as_bytes());
