@@ -490,8 +490,7 @@ lazy_static! {
               of ripgrep.\n\nNote that this MUST be passed to every \
               invocation of ripgrep. Type settings are NOT persisted.");
         doc!(h, "horiz-context",
-             "How many columns to guarantee around a match. 0 means unlimited \
-              (the default)");
+             "Number of columns to show around a match.");
         doc!(h, "horiz-matches",
              "Maximum number of matches to print on a line. To avoid ambiguity, \
               --horiz-context is ignored for final ellipsis. \
