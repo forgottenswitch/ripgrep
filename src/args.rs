@@ -26,6 +26,7 @@ use ignore;
 use printer::{ColorSpecs, Printer};
 use unescape::unescape;
 use worker::{Worker, WorkerBuilder};
+use Cygwin;
 
 use Result;
 
@@ -369,9 +370,19 @@ impl<'a> ArgMatches<'a> {
 
     /// Return all file paths that ripgrep should search.
     fn paths(&self) -> Vec<PathBuf> {
+        //panic("www1"); // If panicing there, all is fine
+        let cygwin = Cygwin::new();
+        panic!("www2"); // Never reached - probably GetProcAddress from cygwin1.dll crashes RUST_BACKTRACE.
         let mut paths: Vec<PathBuf> = match self.values_of_os("path") {
             None => vec![],
-            Some(vals) => vals.map(|p| Path::new(p).to_path_buf()).collect(),
+            Some(vals) => vals.map(|p| {
+                let pb = Path::new(p).to_path_buf();
+                if !cygwin.running_under_cygwin() {
+                    pb
+                } else {
+                    cygwin.convert_path(pb)
+                }
+            }).collect(),
         };
         // If --file, --files or --regexp is given, then the first path is
         // always in `pattern`.

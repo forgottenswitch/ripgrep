@@ -28,6 +28,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::thread;
+use std::path::PathBuf;
+use std::vec::Vec;
+use std::mem;
 
 use args::Args;
 use worker::Work;
@@ -63,6 +66,7 @@ pub struct Cygwin {
 #[cfg(windows)]
 pub struct Cygwin {
     dll: winapi::HINSTANCE,
+    conv_path: winapi::FARPROC,
 }
 
 #[cfg(not(windows))]
@@ -81,13 +85,43 @@ impl Cygwin {
 impl Cygwin {
     fn new() -> Cygwin {
         let cygwin_dll = unsafe { kernel32::LoadLibraryA("cygwin1.dll\0".as_bytes().as_ptr() as *const i8) };
+        println!(" cyg dll = {:?}", cygwin_dll);
+        let cygwin_conv_path = unsafe {
+            kernel32::GetProcAddress(cygwin_dll, "cygwin_conv_path\0".as_bytes().as_ptr() as *const i8)
+        };
+        println!(" conv path = {:?}", cygwin_conv_path);
         return Cygwin {
             dll: cygwin_dll,
+            conv_path: cygwin_conv_path,
         };
     }
 
     fn running_under_cygwin(&self) -> bool {
         return (self.dll as usize) != 0;
+    }
+
+    fn convert_path(&self, cygwin_path: PathBuf) -> PathBuf {
+        let cygwin_path_z = format!("{}\0", cygwin_path.as_path().to_string_lossy());
+        let cygwin_path_zb = cygwin_path_z.as_str().as_ptr();
+        println!("abc0");
+        return PathBuf::from(".");
+        unsafe {
+            let conv_path : fn(isize, *const u8, *mut u8, isize) -> isize =
+                mem::transmute(self.conv_path);
+            let mode : isize = 1; // CCP_POSIX_TO_WIN_W
+            println!("abc1");
+            let sz : isize = conv_path(mode, cygwin_path_zb, 0 as *mut u8, 0);
+            println!("abc2");
+            if sz < 0 {
+                println!("abc3");
+                return PathBuf::from(cygwin_path.as_path().to_string_lossy().into_owned());
+            }
+            println!("abc4");
+            let mut out_path : Vec<u8> = Vec::with_capacity(sz as usize);
+            conv_path(mode, cygwin_path_zb, (&out_path[0..]).as_ptr() as *mut u8, sz);
+            let out_path_utf8 = String::from_utf8_lossy(&out_path[0..]).into_owned();
+            return PathBuf::from(out_path_utf8);
+        }
     }
 }
 
@@ -106,8 +140,6 @@ fn run(args: Arc<Args>) -> Result<u64> {
     if args.never_match() {
         return Ok(0);
     }
-    let cygwin = Cygwin::new();
-    println!("Running under cygwin: {}", cygwin.running_under_cygwin());
     let threads = args.threads();
     if args.files() {
         if threads == 1 || args.is_one_path() {
