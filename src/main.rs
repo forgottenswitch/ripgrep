@@ -56,6 +56,41 @@ mod worker;
 
 pub type Result<T> = result::Result<T, Box<Error + Send + Sync>>;
 
+#[cfg(not(windows))]
+pub struct Cygwin {
+}
+
+#[cfg(windows)]
+pub struct Cygwin {
+    dll: winapi::HINSTANCE,
+}
+
+#[cfg(not(windows))]
+impl Cygwin {
+    fn new() -> Cygwin {
+        return Cygwin {
+        };
+    }
+
+    fn running_under_cygwin(&self) -> bool {
+        return false;
+    }
+}
+
+#[cfg(windows)]
+impl Cygwin {
+    fn new() -> Cygwin {
+        let cygwin_dll = unsafe { kernel32::LoadLibraryA("cygwin1.dll\0".as_bytes().as_ptr() as *const i8) };
+        return Cygwin {
+            dll: cygwin_dll,
+        };
+    }
+
+    fn running_under_cygwin(&self) -> bool {
+        return (self.dll as usize) != 0;
+    }
+}
+
 fn main() {
     match Args::parse().map(Arc::new).and_then(run) {
         Ok(0) => process::exit(1),
@@ -71,6 +106,8 @@ fn run(args: Arc<Args>) -> Result<u64> {
     if args.never_match() {
         return Ok(0);
     }
+    let cygwin = Cygwin::new();
+    println!("Running under cygwin: {}", cygwin.running_under_cygwin());
     let threads = args.threads();
     if args.files() {
         if threads == 1 || args.is_one_path() {
